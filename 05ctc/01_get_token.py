@@ -9,6 +9,7 @@
 # osモジュールをインポート
 import os
 
+os.chdir(os.path.dirname(__file__))
 
 def token_to_int(label_file_str,
                  label_file_int,

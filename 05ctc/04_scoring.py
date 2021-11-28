@@ -11,6 +11,7 @@ import levenshtein
 import os
 import sys
 
+os.chdir(os.path.dirname(__file__))
 
 if __name__ == "__main__":
  

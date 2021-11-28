@@ -34,6 +34,7 @@ import os
 import sys
 import shutil
 
+os.chdir(os.path.dirname(__file__))
 
 def ctc_simple_decode(int_vector, token_list):
     ''' 以下の手順で，フレーム単位のCTC出力をトークン列に変換する
