@@ -27,6 +27,7 @@ import json
 import os
 import sys
 
+os.chdir(os.path.dirname(__file__))
 
 #
 # メイン関数

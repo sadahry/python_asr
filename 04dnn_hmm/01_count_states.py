@@ -15,6 +15,8 @@ import numpy as np
 import sys
 import os
 
+os.chdir(os.path.dirname(__file__))
+
 #
 # メイン関数
 #

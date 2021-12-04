@@ -14,6 +14,8 @@ import numpy as np
 import os
 import sys
 
+os.chdir(os.path.dirname(__file__))
+
 class FeatureExtractor():
     ''' 特徴量(FBANK, MFCC)を抽出するクラス
     sample_frequency: 入力波形のサンプリング周波数 [Hz]

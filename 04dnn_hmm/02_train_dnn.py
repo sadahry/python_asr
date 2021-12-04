@@ -33,6 +33,8 @@ import os
 import sys
 import shutil
 
+os.chdir(os.path.dirname(__file__))
+
 #
 # メイン関数
 #
