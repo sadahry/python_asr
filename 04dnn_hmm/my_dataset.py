@@ -5,7 +5,7 @@
 #
 
 # PytorchのDatasetモジュールをインポート
-from torch.utils.data import Dataset
+from tensorflow import keras
 
 # 数値演算用モジュール(numpy)をインポート
 import numpy as np
@@ -14,7 +14,7 @@ import numpy as np
 import sys
 
 
-class SequenceDataset(Dataset):
+class SequenceDataset(keras.utils.Sequence):
     ''' ミニバッチデータを作成するクラス
         torch.utils.data.Datasetクラスを継承し，
         以下の関数を定義する
@@ -119,12 +119,12 @@ class SequenceDataset(Dataset):
             # = 最大フレーム数 - 自分のフレーム数
             pad_len = self.max_label_len \
                     - self.label_len_list[n]
-            # pad_indexの値で埋める
             self.label_list[n] = \
                 np.pad(self.label_list[n], 
                        [0, pad_len], 
                        mode='constant', 
-                       constant_values=self.pad_index)
+                       # padを無音として学習に組み込む
+                       constant_values=0)
 
     def __len__(self):
         ''' 学習データの総サンプル数を返す関数
@@ -141,8 +141,6 @@ class SequenceDataset(Dataset):
         '''
         # 特徴量系列のフレーム数
         feat_len = self.feat_len_list[idx]
-        # ラベルの長さ
-        label_len = self.label_len_list[idx]
 
         # 特徴量データを特徴量ファイルから読み込む
         feat = np.fromfile(self.feat_list[idx], 
@@ -183,14 +181,6 @@ class SequenceDataset(Dataset):
         # ラベル
         label = self.label_list[idx]
 
-        # 発話ID
-        utt_id = self.id_list[idx]
-
         # 特徴量，ラベル，フレーム数，
         # ラベル長，発話IDを返す
-        return (feat, 
-               label,
-               feat_len,
-               label_len,
-               utt_id)
-
+        return (feat, label)
