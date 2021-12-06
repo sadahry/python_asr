@@ -230,6 +230,9 @@ if __name__ == "__main__":
         save_weights_only=False,
         monitor='val_loss',
         mode='min',
+        # probably below is correct
+        # monitor='val_accuracy',
+        # mode='max',
         save_best_only=True,
     )
 
