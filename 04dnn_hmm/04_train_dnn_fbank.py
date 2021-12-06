@@ -223,6 +223,16 @@ if __name__ == "__main__":
         patience=early_stop_threshold,
     )
 
+    # 損失値が最低値を更新した場合は，
+    # その時のモデルを保存する
+    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=os.path.join(output_dir,'best_model'),
+        save_weights_only=False,
+        monitor='val_loss',
+        mode='min',
+        save_best_only=True,
+    )
+
     history = model.fit(
         train_dataset,
         # batch_sizeのように各発話をまとめる機構は省略
@@ -231,7 +241,7 @@ if __name__ == "__main__":
         # https://www.tensorflow.org/api_docs/python/tf/keras/Model
         validation_data=dev_dataset,
         epochs=max_num_epoch,
-        callbacks=early_stopping,
+        callbacks=[early_stopping, model_checkpoint_callback],
     )
 
     #

@@ -41,7 +41,7 @@ if __name__ == "__main__":
     hmm_file = '../03gmm_hmm/exp/model_3state_2mix/10.hmm'
  
     # DNNモデルディレクトリ
-    dnn_dir = './exp/model_dnn_fbank/final_model'
+    dnn_dir = './exp/model_dnn_fbank/best_model'
 
     # HMM状態出現カウントファイル
     count_file = './exp/model_dnn/state_counts'
