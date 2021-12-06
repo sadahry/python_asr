@@ -4,9 +4,7 @@
 # DNN-HMMで認識します．
 #
 
-# Pytorchを用いた処理に必要なモジュールをインポート
-import torch
-import torch.nn.functional as F
+import tensorflow as tf
 
 # 数値演算用モジュール(numpy)をインポート
 import numpy as np
@@ -16,9 +14,6 @@ from hmmfunc import MonoPhoneHMM
 
 # 作成したDatasetクラスをインポート
 from my_dataset import SequenceDataset
-
-# モデルの定義をインポート
-from my_model import MyDNN
 
 # json形式の入出力を行うモジュールをインポート
 import json
@@ -45,8 +40,8 @@ if __name__ == "__main__":
     # HMMファイル
     hmm_file = '../03gmm_hmm/exp/model_3state_2mix/10.hmm'
  
-    # DNNモデルファイル
-    dnn_file = './exp/model_dnn_fbank/best_model.pt'
+    # DNNモデルディレクトリ
+    dnn_dir = './exp/model_dnn_fbank/final_model.pt'
 
     # HMM状態出現カウントファイル
     count_file = './exp/model_dnn/state_counts'
@@ -68,7 +63,7 @@ if __name__ == "__main__":
 
     # DNN学習時に出力した設定ファイル
     config_file = os.path.join(\
-                      os.path.dirname(dnn_file),
+                      os.path.dirname(dnn_dir),
                       'config.json')
 
     #
@@ -84,11 +79,6 @@ if __name__ == "__main__":
     with open(config_file, mode='r') as f:
         config = json.load(f)
 
-    # 読み込んだ設定を反映する
-    # 中間層のレイヤー数
-    num_layers = config['num_layers']
-    # 中間層の次元数
-    hidden_dim = config['hidden_dim']
     # spliceフレーム数
     splice = config['splice']
 
@@ -115,21 +105,11 @@ if __name__ == "__main__":
     # DNNの出力層の次元数は音素数x状態数
     dim_out = hmm.num_phones * hmm.num_states
 
-    # ニューラルネットワークモデルを作成する
-    # 入力特徴量の次元数は
-    # feat_dim * (2*splice+1)
-    dim_in = feat_dim * (2*splice+1)
-    model = MyDNN(dim_in=dim_in,
-                  dim_hidden=hidden_dim,
-                  dim_out=dim_out, 
-                  num_layers=num_layers)
-    
     # 学習済みのDNNファイルから
-    # モデルのパラメータを読み込む
-    model.load_state_dict(torch.load(dnn_file))
+    # モデルを読み込む
+    model = tf.keras.models.load_model(dnn_dir)
 
-    # モデルを評価モードに設定する
-    model.eval()
+    model.summary()
 
     # HMM状態カウントファイルを読み込む
     with open(count_file, mode='r') as f:
@@ -222,18 +202,14 @@ if __name__ == "__main__":
                 # 結合する
                 feat = np.hstack([feat,tmp])
 
-            # pytorchのDNNに入力するため，
-            # torch.tensor型に変換する
-            feat = torch.tensor(feat)
-            
             # DNNに入力する
             output = model(feat)
 
             # softmax関数に入れて確率に変換する
-            output = F.softmax(output, dim=1)
+            output = tf.nn.softmax(output)
             
             # numpy array型に戻す
-            output = output.detach().numpy()
+            output = output.numpy()
 
             # 各HMM状態の事前発生確率で割り，
             # さらに対数を取って対数尤度に変換する
