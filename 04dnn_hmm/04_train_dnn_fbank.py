@@ -215,7 +215,7 @@ if __name__ == "__main__":
                                  'log.txt'),
                                  mode='w')
     log_file.write('epoch\ttrain loss\t'\
-                   'train err\tvalid loss\tvalid err')
+                   'train err\tvalid loss\tvalid err\n')
 
     early_stopping = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss',
@@ -233,6 +233,13 @@ if __name__ == "__main__":
         save_best_only=True,
     )
 
+    class LoggingCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            log_file.write(f"{epoch}\t{logs['loss']}\t{1.0-logs['accuracy']}" \
+                           f"\t{logs['val_loss']}\t{1.0-logs['val_accuracy']}\n")
+
+    logging_callback = LoggingCallback()
+
     history = model.fit(
         train_dataset,
         # batch_sizeのように各発話をまとめる機構は省略
@@ -241,7 +248,7 @@ if __name__ == "__main__":
         # https://www.tensorflow.org/api_docs/python/tf/keras/Model
         validation_data=dev_dataset,
         epochs=max_num_epoch,
-        callbacks=[early_stopping, model_checkpoint_callback],
+        callbacks=[early_stopping, model_checkpoint_callback, logging_callback],
     )
 
     #
@@ -256,8 +263,14 @@ if __name__ == "__main__":
     # 最終エポックのモデルを保存する
     model.save(os.path.join(output_dir,'final_model'))
 
-    # 最終エポックの情報
     metrics = history.history
+
+    # 最終エポックの情報
+    print('Final epoch model -> %s/final_model' \
+          % (output_dir))
+    log_file.write('Final epoch model ->'\
+                   ' %s/final_model\n' \
+                   % (output_dir))
     for phase in ['train', 'validation']:
         # 最終エポックの損失値を出力
         loss = 'val_loss' if phase == 'validation' else 'loss'
@@ -278,10 +291,10 @@ if __name__ == "__main__":
     # ベストエポックの情報
     # (validationの損失が最小だったエポック)
     print('Best epoch model (%d-th epoch)'\
-          ' -> %s/best_model.pt' \
+          ' -> %s/best_model' \
           % (best_epoch+1, output_dir))
     log_file.write('Best epoch model (%d-th epoch)'\
-          ' -> %s/best_model.pt\n' \
+          ' -> %s/best_model\n' \
           % (best_epoch+1, output_dir))
     for phase in ['train', 'validation']:
         # ベストエポックの損失値を出力
@@ -323,4 +336,3 @@ if __name__ == "__main__":
 
     # ログファイルを閉じる
     log_file.close()
-
