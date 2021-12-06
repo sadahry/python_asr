@@ -4,7 +4,6 @@
 # Pytorchで用いるDatasetの定義
 #
 
-# PytorchのDatasetモジュールをインポート
 from tensorflow import keras
 
 # 数値演算用モジュール(numpy)をインポート
