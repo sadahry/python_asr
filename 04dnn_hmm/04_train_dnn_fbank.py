@@ -244,7 +244,7 @@ if __name__ == "__main__":
                    '------------------\n')
 
     # 最終エポックのモデルを保存する
-    model.save(os.path.join(output_dir,'final_model.pt'))
+    model.save(os.path.join(output_dir,'final_model'))
 
     # 最終エポックの情報
     metrics = history.history
