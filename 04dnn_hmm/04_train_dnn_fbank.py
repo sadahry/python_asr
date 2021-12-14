@@ -171,8 +171,8 @@ if __name__ == "__main__":
     initializer = tf.keras.initializers.LecunNormal()
 
     model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Dense(hidden_dim, input_shape=(dim_in,), activation=tf.nn.relu, kernel_initializer=initializer))
-    for _ in range(num_layers):
+    model.add(tf.keras.layers.Masking(input_shape=(dim_in,), mask_value=pad_index))
+    for _ in range(num_layers + 1):
         model.add(tf.keras.layers.Dense(hidden_dim, activation=tf.nn.relu, kernel_initializer=initializer))
     model.add(tf.keras.layers.Dense(dim_out, kernel_initializer=initializer))
 

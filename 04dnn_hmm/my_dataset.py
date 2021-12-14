@@ -122,8 +122,7 @@ class SequenceDataset(keras.utils.Sequence):
                 np.pad(self.label_list[n], 
                        [0, pad_len], 
                        mode='constant', 
-                       # padを無音として学習に組み込む
-                       constant_values=0)
+                       constant_values=self.pad_index)
 
     def __len__(self):
         ''' 学習データの総サンプル数を返す関数
@@ -170,12 +169,12 @@ class SequenceDataset(keras.utils.Sequence):
             feat = np.hstack([feat,tmp])
 
         # 特徴量データのフレーム数を最大フレーム数に
-        # 合わせるため，0で埋める
+        # 合わせるため，pad_indexで埋める
         pad_len = self.max_feat_len - feat_len
         feat = np.pad(feat,
                       [(0, pad_len), (0, 0)],
                       mode='constant',
-                      constant_values=0)
+                      constant_values=self.pad_index)
 
         # ラベル
         label = self.label_list[idx]
