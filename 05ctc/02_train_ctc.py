@@ -120,7 +120,7 @@ if __name__ == "__main__":
     projection_dim = 320
 
     # bidirectional を用いるか(Trueなら用いる)
-    bidirectional = True
+    bidirectional = False
 
     # 初期学習率
     initial_learning_rate = 1.0
