@@ -4,17 +4,18 @@
 # Pytorchで用いるDatasetの定義
 #
 
-# PytorchのDatasetモジュールをインポート
-from torch.utils.data import Dataset
+from numpy.lib.arraypad import pad
+import tensorflow as tf
+from tensorflow import keras
 
 # 数値演算用モジュール(numpy)をインポート
 import numpy as np
 
 # sysモジュールをインポート
 import sys
+import math
 
-
-class SequenceDataset(Dataset):
+class SequenceDataset(keras.utils.Sequence):
     ''' ミニバッチデータを作成するクラス
         torch.utils.data.Datasetクラスを継承し，
         以下の関数を定義する
@@ -36,6 +37,8 @@ class SequenceDataset(Dataset):
                  label_scp, 
                  feat_mean, 
                  feat_std,
+                 batch_size,
+                 num_tokens,
                  pad_index=0,
                  splice=0):
         # 発話の数
@@ -64,6 +67,10 @@ class SequenceDataset(Dataset):
         self.max_feat_len = 0
         # ラベル長の最大値
         self.max_label_len = 0
+        # 1バッチに含める発話数
+        self.batch_size = batch_size
+        # トークン数(blankを含む)
+        self.num_tokens = num_tokens
         # フレーム埋めに用いる整数値
         self.pad_index = pad_index
         # splice:前後nフレームの特徴量を結合
@@ -119,7 +126,6 @@ class SequenceDataset(Dataset):
             # = 最大フレーム数 - 自分のフレーム数
             pad_len = self.max_label_len \
                     - self.label_len_list[n]
-            # pad_indexの値で埋める
             self.label_list[n] = \
                 np.pad(self.label_list[n], 
                        [0, pad_len], 
@@ -128,69 +134,86 @@ class SequenceDataset(Dataset):
 
     def __len__(self):
         ''' 学習データの総サンプル数を返す関数
-        本実装では発話単位でバッチを作成するため，
-        総サンプル数=発話数である．
+        本実装では発話単位でバッチを作成する．
+        ただしTensorflow実装ではこのクラス内でバッチを作成するため，
+        総サンプル数=発話数/バッチ数となる．
         '''
-        return self.num_utts
-
+        return math.ceil(self.num_utts / self.batch_size)
 
     def __getitem__(self, idx):
         ''' サンプルデータを返す関数
-        本実装では発話単位でバッチを作成するため，
-        idx=発話番号である．
+        本実装では発話単位でバッチを作成する．
+        ただしTensorflow実装ではこのクラス内でバッチを作成するため，
+        idx=バッチ番号となり，idx*バッチ数の発話を取得する．
         '''
-        # 特徴量系列のフレーム数
-        feat_len = self.feat_len_list[idx]
-        # ラベルの長さ
-        label_len = self.label_len_list[idx]
+        feats = []
+        labels = []
+        feat_lens = []
+        label_lens = []
+        for i in range(idx*self.batch_size, min(self.num_utts, (idx+1)*self.batch_size)):
+            # 特徴量系列のフレーム数
+            feat_len = self.feat_len_list[i]
 
-        # 特徴量データを特徴量ファイルから読み込む
-        feat = np.fromfile(self.feat_list[idx], 
-                           dtype=np.float32)
-        # フレーム数 x 次元数の配列に変形
-        feat = feat.reshape(-1, self.feat_dim)
+            # 特徴量データを特徴量ファイルから読み込む
+            feat = np.fromfile(self.feat_list[i], 
+                            dtype=np.float32)
+            # フレーム数 x 次元数の配列に変形
+            feat = feat.reshape(-1, self.feat_dim)
 
-        # 平均と標準偏差を使って正規化(標準化)を行う
-        feat = (feat - self.feat_mean) / self.feat_std
+            # 平均と標準偏差を使って正規化(標準化)を行う
+            feat = (feat - self.feat_mean) / self.feat_std
 
-        # splicing: 前後 n フレームの特徴量を結合する
-        org_feat = feat.copy()
-        for n in range(-self.splice, self.splice+1):
-            # 元々の特徴量を n フレームずらす
-            tmp = np.roll(org_feat, n, axis=0)
-            if n < 0:
-                # 前にずらした場合は
-                # 終端nフレームを0にする
-                tmp[n:] = 0
-            elif n > 0:
-                # 後ろにずらした場合は
-                # 始端nフレームを0にする
-                tmp[:n] = 0
-            else:
-                continue
-            # ずらした特徴量を次元方向に
-            # 結合する
-            feat = np.hstack([feat,tmp])
+            # splicing: 前後 n フレームの特徴量を結合する
+            org_feat = feat.copy()
+            for n in range(-self.splice, self.splice+1):
+                # 元々の特徴量を n フレームずらす
+                tmp = np.roll(org_feat, n, axis=0)
+                if n < 0:
+                    # 前にずらした場合は
+                    # 終端nフレームを0にする
+                    tmp[n:] = 0
+                elif n > 0:
+                    # 後ろにずらした場合は
+                    # 始端nフレームを0にする
+                    tmp[:n] = 0
+                else:
+                    continue
+                # ずらした特徴量を次元方向に
+                # 結合する
+                feat = np.hstack([feat,tmp])
 
-        # 特徴量データのフレーム数を最大フレーム数に
-        # 合わせるため，0で埋める
-        pad_len = self.max_feat_len - feat_len
-        feat = np.pad(feat,
-                      [(0, pad_len), (0, 0)],
-                      mode='constant',
-                      constant_values=0)
+            # 特徴量データのフレーム数を最大フレーム数に
+            # 合わせるため，pad_indexで埋める
+            pad_len = self.max_feat_len - feat_len
+            feat = np.pad(feat,
+                        [(0, pad_len), (0, 0)],
+                        mode='constant',
+                        constant_values=self.pad_index)
 
-        # ラベル
-        label = self.label_list[idx]
+            # featに対応するデータを取得
+            label = self.label_list[i]
+            feat_len = self.feat_len_list[i]
+            label_len = self.label_len_list[i]
 
-        # 発話ID
-        utt_id = self.id_list[idx]
+            feats.append(feat)
+            labels.append(label)
+            feat_lens.append(feat_len)
+            label_lens.append(label_len)
 
-        # 特徴量，ラベル，フレーム数，
-        # ラベル長，発話IDを返す
-        return (feat, 
-               label,
-               feat_len,
-               label_len,
-               utt_id)
+        # 以下を踏襲
+        # https://github.com/kutvonenaki/simple_ocr/blob/af05b1697ff4771b611e2fc671bf25f04aa87388/ocr_source/batch_functions.py
 
+        # now the hacky part
+        # keras requires in the loss function to y_pred and y_true to be the same shape
+        # but the ctc losses use y_pred of shape (batchsize, max_feat_len, num_tokens) from NN
+        # and batch_labels, input_length, label_lens which are the "y_true" but these are
+        # different dimension so pack them to (batchsize, max_feat_len, num_tokens) and later
+        # unpack in the loss to stop the whining.
+        y_true = np.full((self.batch_size, self.max_feat_len, self.num_tokens), self.pad_index, dtype=np.int32)
+
+        y_true[:, 0:self.max_label_len, 0] = labels
+        y_true[:, 0, 1] = feat_lens
+        y_true[:, 0, 2] = label_lens
+
+        # 特徴量，ラベルのバッチを返す
+        return (np.array(feats), y_true)

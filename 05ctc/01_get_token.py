@@ -56,7 +56,9 @@ def token_to_int(label_file_str,
                     # 存在する場合
                     # 対応する番号を出力
                     label_out.write(' %d' \
-                                    % (token_list.index(u) + 1))
+                                    # tf.keras.backend.ctc_batch_costでは
+                                    # 最後のindexをblankとするため +1 しない
+                                    % (token_list.index(u)))
             label_out.write('\n')
 
 
@@ -144,9 +146,9 @@ if __name__ == "__main__":
                   mode='w') as token_file:
             for i, u in enumerate(token_list):
                 # 「トークン 対応する番号」を記述
-                # このとき，番号は1始まりにする．
-                # (0はCTCのblankトークンに割り当てるため)
-                token_file.write('%s %d\n' % (u, i+1))
+                # tf.keras.backend.ctc_batch_costでは
+                # 最後のindexをblankとするため +1 しない
+                token_file.write('%s %d\n' % (u, i))
 
         #
         # 作成したトークンリストを使って，ラベルファイルの

@@ -4,12 +4,7 @@
 # CTCを学習します．
 #
 
-# Pytorchを用いた処理に必要なモジュールをインポート
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from torch import optim
+import tensorflow as tf
 
 # 作成したDatasetクラスをインポート
 from my_dataset import SequenceDataset
@@ -22,9 +17,6 @@ import matplotlib.pyplot as plt
 
 # 認識エラー率を計算するモジュールをインポート
 import levenshtein
-
-# モデルの定義をインポート
-from my_model import MyCTCModel
 
 # json形式の入出力を行うモジュールをインポート
 import json
@@ -209,8 +201,7 @@ if __name__ == "__main__":
     feat_dim = np.size(feat_mean)
 
     # トークンリストをdictionary型で読み込む
-    # このとき，0番目は blank と定義する
-    token_list = {0: '<blank>'}
+    token_list = {}
     with open(token_list_path, mode='r') as f:
         # 1行ずつ読み込む
         for line in f: 
@@ -220,308 +211,131 @@ if __name__ == "__main__":
             # 0番目の要素がトークン，1番目の要素がID
             token_list[int(parts[1])] = parts[0]
 
-    # トークン数(blankを含む)
-    num_tokens = len(token_list)
-    
+    # トークン数
+    # kerasのCTCでは最後のindexをblankとするため、token_listには含めずトークン合計数を +1 する
+    # the +1 stands for a blank character needed in CTC
+    # https://github.com/kutvonenaki/simple_ocr/blob/bb35e437d6b2447d084500c032461bf13c95cc3f/ocr_source/models.py#L62
+    num_tokens = len(token_list) + 1
+
+    pad_index = 0.0
+
+    '''LeCunのパラメータ初期化方法の実行
+    各重み(バイアス成分除く)を，平均0，標準偏差 1/sqrt(dim) の
+    正規分布に基づく乱数で初期化(dim は入力次元数)
+    model: Pytorchで定義したモデル
+    '''
+    initializer = tf.keras.initializers.LecunNormal()
+
     # ニューラルネットワークモデルを作成する
     # 入力の次元数は特徴量の次元数，
     # 出力の次元数はトークン数となる
-    model = MyCTCModel(dim_in=feat_dim,
-                       dim_enc_hid=hidden_dim,
-                       dim_enc_proj=projection_dim,
-                       dim_out=num_tokens, 
-                       enc_num_layers=num_layers,
-                       enc_bidirectional=bidirectional,
-                       enc_sub_sample=sub_sample,
-                       enc_rnn_type=rnn_type)
-    print(model)
+    model = tf.keras.Sequential()
+    # model.add(tf.keras.Input(shape=(feat_dim,)))
+    model.add(tf.keras.layers.Masking(input_shape=(None, feat_dim), mask_value=pad_index))
 
-    # オプティマイザを定義
-    optimizer = optim.Adadelta(model.parameters(),
-                               lr=initial_learning_rate,
-                               rho=0.95,
-                               eps=1e-8,
-                               weight_decay=0.0)
+    for i in range(num_layers):
+        rnn_layer = tf.keras.layers.GRU(hidden_dim, return_sequences=True, kernel_initializer=initializer) if rnn_type == 'GRU' \
+                    else tf.keras.layers.LTSM(hidden_dim, return_sequences=True, kernel_initializer=initializer)
+        if bidirectional:
+            rnn_layer = tf.keras.layers.Bidirectional(rnn_layer)
+        model.add(rnn_layer)
+        # Projection層もRNN層と同様に1層ずつ定義する
+        # TODO sub sampling
+        model.add(tf.keras.layers.Dense(projection_dim, kernel_initializer=initializer))
+    model.add(tf.keras.layers.Dense(num_tokens, activation=tf.nn.softmax, kernel_initializer=initializer))
+
+    model.summary()
+
+    # 以下を踏襲
+    # https://github.com/kutvonenaki/simple_ocr/blob/af05b1697ff4771b611e2fc671bf25f04aa87388/ocr_source/losses.py#L8-L27
+    def custom_ctc():
+        """Custom CTC loss implementation"""
+
+        def loss(y_true, y_pred):
+            # print("calc ctc...")
+            # print(y_true)
+            # print(y_pred)
+            """The actual loss"""
+            labels = y_true[:, :, 0]
+            feat_lens = y_true[:, 0, 1]
+            label_lens = y_true[:, 0, 2]
+
+            # reshape for the loss, add that extra dimension
+            feat_lens = tf.expand_dims(feat_lens, -1)
+            label_lens = tf.expand_dims(label_lens, -1)
+
+            # use keras backend function for the loss
+            return tf.keras.backend.ctc_batch_cost(labels, y_pred, feat_lens, label_lens)
+        return loss
+
+    model.compile(
+        # オプティマイザを定義
+        optimizer=tf.keras.optimizers.Adadelta(learning_rate=initial_learning_rate, rho=0.95, epsilon=1e-8),
+        # CTC損失関数を呼び出す．
+        # blankは0番目と定義する．
+        loss=custom_ctc(),
+        metrics=['accuracy'],
+        # run_eagerly=True,
+    )
 
     # 訓練/開発データのデータセットを作成する
     train_dataset = SequenceDataset(feat_scp_train,
                                     label_train,
                                     feat_mean,
-                                    feat_std)
+                                    feat_std,
+                                    batch_size,
+                                    num_tokens,
+                                    pad_index)
 
     # 開発データのデータセットを作成する
     dev_dataset = SequenceDataset(feat_scp_dev,
                                   label_dev,
                                   feat_mean,
-                                  feat_std)
-
-    # 訓練データのDataLoaderを呼び出す
-    # 訓練データはシャッフルして用いる
-    #  (num_workerは大きい程処理が速くなりますが，
-    #   PCに負担が出ます．PCのスペックに応じて
-    #   設定してください)
-    train_loader = DataLoader(train_dataset,
-                              batch_size=batch_size,
-                              shuffle=True,
-                              num_workers=4)
-    # 開発データのDataLoaderを呼び出す
-    # 開発データはデータはシャッフルしない
-    dev_loader = DataLoader(dev_dataset,
-                            batch_size=batch_size,
-                            shuffle=False,
-                            num_workers=4)
-
-    # CTC損失関数を呼び出す．
-    # blankは0番目と定義する．
-    criterion = nn.CTCLoss(blank=0, reduction='sum')
-
-    # CUDAが使える場合はモデルパラメータをGPUに，
-    # そうでなければCPUに配置する
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    model = model.to(device)
-
-    # モデルをトレーニングモードに設定する
-    model.train()
-
-    # 訓練データの処理と開発データの処理を
-    # for でシンプルに記述するために，辞書データ化しておく
-    dataset_loader = {'train': train_loader,
-                      'validation': dev_loader}
-
-    # 各エポックにおける損失値と誤り率の履歴
-    loss_history = {'train': [],
-                    'validation': []}
-    error_history = {'train': [],
-                     'validation': []}
-
-    # 本プログラムでは，validation時の損失値が
-    # 最も低かったモデルを保存する．
-    # そのため，最も低い損失値，
-    # そのときのモデルとエポック数を記憶しておく
-    best_loss = -1
-    best_model = None
-    best_epoch = 0
-    # Early stoppingフラグ．Trueになると学習を打ち切る
-    early_stop_flag = False
-    # Early stopping判定用(損失値の最低値が
-    # 更新されないエポックが何回続いているか)のカウンタ
-    counter_for_early_stop = 0
+                                  feat_std,
+                                  batch_size,
+                                  num_tokens,
+                                  pad_index)
 
     # ログファイルの準備
     log_file = open(os.path.join(output_dir,
                                  'log.txt'),
                                  mode='w')
     log_file.write('epoch\ttrain loss\t'\
-                   'train err\tvalid loss\tvalid err')
+                   'train err\tvalid loss\tvalid err\n')
 
-    # エポックの数だけループ
-    for epoch in range(max_num_epoch):
-        # early stopフラグが立っている場合は，
-        # 学習を打ち切る
-        if early_stop_flag:
-            print('    Early stopping.'\
-                  ' (early_stop_threshold = %d)' \
-                  % (early_stop_threshold))
-            log_file.write('\n    Early stopping.'\
-                           ' (early_stop_threshold = %d)' \
-                           % (early_stop_threshold))
-            break
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        mode='min',
+        patience=early_stop_threshold,
+    )
 
-        # エポック数を表示
-        print('epoch %d/%d:' % (epoch+1, max_num_epoch))
-        log_file.write('\n%d\t' % (epoch+1))
+    # 損失値が最低値を更新した場合は，
+    # その時のモデルを保存する
+    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=os.path.join(output_dir,'best_model'),
+        save_weights_only=False,
+        monitor='val_loss',
+        mode='min',
+        # probably below is correct
+        # monitor='val_accuracy',
+        # mode='max',
+        save_best_only=True,
+    )
 
-        # trainフェーズとvalidationフェーズを交互に実施する
-        for phase in ['train', 'validation']:
-            # このエポックにおける累積損失値と発話数
-            total_loss = 0
-            total_utt = 0
-            # このエポックにおける累積認識誤り文字数と総文字数
-            total_error = 0
-            total_token_length = 0
+    class LoggingCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            log_file.write(f"{epoch}\t{logs['loss']}\t{1.0-logs['accuracy']}" \
+                           f"\t{logs['val_loss']}\t{1.0-logs['val_accuracy']}\n")
 
-            # 各フェーズのDataLoaderから1ミニバッチ
-            # ずつ取り出して処理する．
-            # これを全ミニバッチ処理が終わるまで繰り返す．
-            # ミニバッチに含まれるデータは，
-            # 音声特徴量，ラベル，フレーム数，
-            # ラベル長，発話ID
-            for (features, labels, feat_lens,
-                 label_lens, utt_ids) \
-                    in dataset_loader[phase]:
+    logging_callback = LoggingCallback()
 
-                # PackedSequence の仕様上，
-                # ミニバッチがフレーム長の降順で
-                # ソートされている必要があるため，
-                # ソートを実行する
-                sorted_lens, indices = \
-                    torch.sort(feat_lens.view(-1),
-                               dim=0,
-                               descending=True)
-                features = features[indices]
-                labels = labels[indices]
-                feat_lens = sorted_lens
-                label_lens = label_lens[indices]
-
-                # CUDAが使える場合はデータをGPUに，
-                # そうでなければCPUに配置する
-                features, labels = \
-                    features.to(device), labels.to(device)
-
-                # 勾配をリセット
-                optimizer.zero_grad()
-
-                # モデルの出力を計算(フォワード処理)
-                # out_lensは処理後のフレーム数．
-                # sub_sampleを行った場合は，
-                # out_lensはfeat_lensより小さい値になる
-                outputs, out_lens = model(features, feat_lens)
-
-                # CTC損失関数を使う場合は，
-                # log_softmaxを通す必要がある
-                # outputsの次元は
-                # [バッチサイズ x フレーム長 x クラス数]
-                # softmaxはクラス数方向に行うので，dim=2を指定する
-                outputs = F.log_softmax(outputs, dim=2)
-
-                # 損失値を計算する．このとき，CTCLossへの入力は
-                # [フレーム数 x バッチサイズ x クラス数] 
-                # である必要があるため，テンソルの0軸と1軸を
-                # 転置(transpose(0,1))した上で入力する
-                loss = criterion(outputs.transpose(0, 1),
-                                 labels,
-                                 out_lens,
-                                 label_lens)
-                
-                # 訓練フェーズの場合は，誤差逆伝搬を実行し，
-                # モデルパラメータを更新する
-                if phase == 'train':
-                    # 勾配を計算する
-                    loss.backward()
-                    # Cliping Gradient により勾配が
-                    # 閾値以下になるよう調整する
-                    torch.nn.utils.clip_grad_norm_(\
-                                              model.parameters(),
-                                              clip_grad_threshold)
-                    # オプティマイザにより，パラメータを更新する
-                    optimizer.step()
-
-                # 認識エラーの算出をTrueにしている場合は，算出する
-                if evaluate_error[phase]:
-                    # バッチ内の1発話ごとに誤りを計算
-                    for n in range(outputs.size(0)):
-                        # 本来のCTCの確率計算は，
-                        # 複数存在するパスを考慮するが，
-                        # ここでは簡単のため，各フレームのmax値を
-                        # たどる Best path decoding を行う
-                        _, hyp_per_frame = torch.max(outputs[n], 1)
-                        # numpy.array型に変換
-                        hyp_per_frame = hyp_per_frame.cpu().numpy()
-                        # 認識結果の文字列を取得
-                        hypothesis = \
-                            ctc_simple_decode(hyp_per_frame,
-                                              token_list)
-                        # 正解の文字列を取得
-                        reference = []
-                        for m in labels[n][:label_lens[n]].cpu().numpy():
-                            reference.append(token_list[m])
-                        # 認識誤りを計算
-                        (error, substitute, 
-                         delete, insert, ref_length) = \
-                            levenshtein.calculate_error(hypothesis,
-                                                        reference)
-                        # 誤り文字数を累積する
-                        total_error += error
-                        # 文字の総数を累積する
-                        total_token_length += ref_length
-
-                # 損失値を累積する
-                total_loss += loss.item()
-                # 処理した発話数をカウントする
-                total_utt += outputs.size(0)
-
-            #
-            # このフェーズにおいて，1エポック終了
-            # 損失値，認識エラー率，モデルの保存等を行う
-            # 
-
-            # 損失値の累積値を，処理した発話数で割る
-            epoch_loss = total_loss / total_utt
-            # 画面とログファイルに出力する
-            print('    %s loss: %f' \
-                  % (phase, epoch_loss))
-            log_file.write('%.6f\t' % (epoch_loss))
-            # 履歴に加える
-            loss_history[phase].append(epoch_loss)
-
-            # 認識エラー率を計算する
-            if evaluate_error[phase]:
-                # 総誤りトークン数を，
-                # 総トークン数で割ってエラー率に換算
-                epoch_error = 100.0 * total_error \
-                            / total_token_length
-                # 画面とログファイルに出力する
-                print('    %s token error rate: %f %%' \
-                    % (phase, epoch_error))
-                log_file.write('%.6f\t' % (epoch_error))
-                # 履歴に加える
-                error_history[phase].append(epoch_error)
-            else:
-                # エラー率を計算していない場合
-                log_file.write('     ---     \t')
-
-            #
-            # validationフェーズ特有の処理
-            #
-            if phase == 'validation':
-                if epoch == 0 or best_loss > epoch_loss:
-                    # 損失値が最低値を更新した場合は，
-                    # その時のモデルを保存する
-                    best_loss = epoch_loss
-                    torch.save(model.state_dict(), 
-                               output_dir+'/best_model.pt')
-                    best_epoch = epoch
-                    # Early stopping判定用の
-                    # カウンタをリセットする
-                    counter_for_early_stop = 0
-                else:
-                    # 最低値を更新しておらず，
-                    if epoch+1 >= lr_decay_start_epoch:
-                        # かつlr_decay_start_epoch以上の
-                        # エポックに達している場合
-                        if counter_for_early_stop+1 \
-                               >= early_stop_threshold:
-                            # 更新していないエポックが，
-                            # 閾値回数以上続いている場合，
-                            # Early stopping フラグを立てる
-                            early_stop_flag = True
-                        else:
-                            # Early stopping条件に
-                            # 達していない場合は
-                            # 学習率を減衰させて学習続行
-                            if lr_decay_factor < 1.0:
-                                for i, param_group \
-                                      in enumerate(\
-                                      optimizer.param_groups):
-                                    if i == 0:
-                                        lr = param_group['lr']
-                                        dlr = lr_decay_factor \
-                                            * lr
-                                        print('    (Decay '\
-                                          'learning rate:'\
-                                          ' %f -> %f)' \
-                                          % (lr, dlr))
-                                        log_file.write(\
-                                          '(Decay learning'\
-                                          ' rate: %f -> %f)'\
-                                           % (lr, dlr))
-                                    param_group['lr'] = dlr
-                            # Early stopping判定用の
-                            # カウンタを増やす
-                            counter_for_early_stop += 1
+    # with tf.device("/cpu:0"): # faster than gpu when setting loss func in model.compile()
+    history = model.fit(
+        train_dataset,
+        validation_data=dev_dataset,
+        epochs=max_num_epoch,
+        callbacks=[early_stopping, model_checkpoint_callback, logging_callback],
+    )
 
     #
     # 全エポック終了
@@ -533,63 +347,61 @@ if __name__ == "__main__":
                    '------------------\n')
 
     # 最終エポックのモデルを保存する
-    torch.save(model.state_dict(), 
-               os.path.join(output_dir,'final_model.pt'))
-    print('Final epoch model -> %s/final_model.pt' \
-          % (output_dir))
-    log_file.write('Final epoch model ->'\
-                   ' %s/final_model.pt\n' \
-                   % (output_dir))
+    model.save(os.path.join(output_dir,'final_model'))
+
+    metrics = history.history
 
     # 最終エポックの情報
+    print('Final epoch model -> %s/final_model' \
+          % (output_dir))
+    log_file.write('Final epoch model ->'\
+                   ' %s/final_model\n' \
+                   % (output_dir))
     for phase in ['train', 'validation']:
         # 最終エポックの損失値を出力
+        loss = 'val_loss' if phase == 'validation' else 'loss'
         print('    %s loss: %f' \
-              % (phase, loss_history[phase][-1]))
+              % (phase, metrics[loss][-1]))
         log_file.write('    %s loss: %f\n' \
-                       % (phase, loss_history[phase][-1]))
+                       % (phase, metrics[loss][-1]))
         # 最終エポックのエラー率を出力    
-        if evaluate_error[phase]:
-            print('    %s token error rate: %f %%' \
-                % (phase, error_history[phase][-1]))
-            log_file.write('    %s token error rate: %f %%\n' \
-                % (phase, error_history[phase][-1]))
-        else:
-            print('    %s token error rate: (not evaluated)' \
-                % (phase))
-            log_file.write('    %s token error rate: '\
-                '(not evaluated)\n' % (phase))
+        acc = 'val_accuracy' if phase == 'validation' else 'accuracy'
+        error_rate = (1.0 - metrics[acc][-1]) * 100
+        print('    %s error rate: %f %%' \
+              % (phase, error_rate))
+        log_file.write('    %s error rate: %f %%\n' \
+                       % (phase, error_rate))
+
+    best_epoch, best_score = max(enumerate(metrics['val_accuracy']), key = lambda x:x[1])
 
     # ベストエポックの情報
     # (validationの損失が最小だったエポック)
     print('Best epoch model (%d-th epoch)'\
-          ' -> %s/best_model.pt' \
+          ' -> %s/best_model' \
           % (best_epoch+1, output_dir))
     log_file.write('Best epoch model (%d-th epoch)'\
-          ' -> %s/best_model.pt\n' \
+          ' -> %s/best_model\n' \
           % (best_epoch+1, output_dir))
     for phase in ['train', 'validation']:
         # ベストエポックの損失値を出力
+        loss = 'val_loss' if phase == 'validation' else 'loss'
         print('    %s loss: %f' \
-              % (phase, loss_history[phase][best_epoch]))
+              % (phase, metrics[loss][best_epoch]))
         log_file.write('    %s loss: %f\n' \
-              % (phase, loss_history[phase][best_epoch]))
+              % (phase, metrics[loss][best_epoch]))
         # ベストエポックのエラー率を出力
-        if evaluate_error[phase]:
-            print('    %s token error rate: %f %%' \
-                  % (phase, error_history[phase][best_epoch]))
-            log_file.write('    %s token error rate: %f %%\n' \
-                  % (phase, error_history[phase][best_epoch]))
-        else:
-            print('    %s token error rate: '\
-                  '(not evaluated)' % (phase))
-            log_file.write('    %s token error rate: '\
-                  '(not evaluated)\n' % (phase))
+        acc = 'val_accuracy' if phase == 'validation' else 'accuracy'
+        error_rate = (1.0 - metrics[acc][best_epoch]) * 100
+        print('    %s error rate: %f %%' \
+              % (phase, error_rate))
+        log_file.write('    %s error rate: %f %%\n' \
+            % (phase, error_rate))
 
     # 損失値の履歴(Learning Curve)グラフにして保存する
     fig1 = plt.figure()
     for phase in ['train', 'validation']:
-        plt.plot(loss_history[phase],
+        loss = 'val_loss' if phase == 'validation' else 'loss'
+        plt.plot(metrics[loss],
                  label=phase+' loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
@@ -599,9 +411,10 @@ if __name__ == "__main__":
     # 認識誤り率の履歴グラフにして保存する
     fig2 = plt.figure()
     for phase in ['train', 'validation']:
-        if evaluate_error[phase]:
-            plt.plot(error_history[phase],
-                     label=phase+' error')
+        acc = 'val_accuracy' if phase == 'validation' else 'accuracy'
+        error_rates = (1.0 - np.array(metrics[acc])) * 100
+        plt.plot(error_rates,
+                 label=phase+' error')
     plt.xlabel('Epoch')
     plt.ylabel('Error [%]')
     fig2.legend()
