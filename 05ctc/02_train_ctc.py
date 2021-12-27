@@ -98,7 +98,7 @@ if __name__ == "__main__":
     output_dir = os.path.join(exp_dir, unit+'_model_ctc')
 
     # ミニバッチに含める発話数
-    batch_size = 10
+    batch_size = 16
 
     # 最大エポック数
     max_num_epoch = 60
@@ -115,10 +115,10 @@ if __name__ == "__main__":
     rnn_type = 'GRU'
 
     # 中間層の次元数
-    hidden_dim = 320
+    hidden_dim = 256
 
     # Projection層の次元数
-    projection_dim = 320
+    projection_dim = 256
 
     # bidirectional を用いるか(Trueなら用いる)
     bidirectional = True
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     # https://github.com/kutvonenaki/simple_ocr/blob/bb35e437d6b2447d084500c032461bf13c95cc3f/ocr_source/models.py#L62
     num_tokens = len(token_list) + 1
 
-    pad_index = 0.0
+    pad_index = -1.0
 
     # ニューラルネットワークモデルを作成する
     # 入力の次元数は特徴量の次元数，
