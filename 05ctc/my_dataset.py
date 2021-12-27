@@ -130,6 +130,9 @@ def build_dataset(feat_scp,
                     mode='constant', 
                     constant_values=pad_index)
 
+    # tf.function内で生成するとエラーになるため、あらかじめ作成
+    pad = tf.constant([[pad_index] * feat_dim])
+
     dataset = tf.data.Dataset.from_tensor_slices(
         (feat_list, label_list, feat_len_list, label_len_list))
 
@@ -138,7 +141,7 @@ def build_dataset(feat_scp,
         ''' サンプルデータを返す関数
         本実装では発話単位でバッチを作成する．
         '''
-        feat = tf.py_function(getfeat, [feat_path, feat_len], tf.float32)
+        feat = getfeat(feat_path, feat_len)
 
         # 特徴量，ラベルとそれぞれの長さのバッチを返す
         # paddingや変換によって元の長さが消失してしまうためinputに含める
@@ -153,40 +156,20 @@ def build_dataset(feat_scp,
         ''' 特徴量の取得処理を分離
         '''
         # 特徴量データを特徴量ファイルから読み込む
-        feat = np.fromfile(feat_path.numpy(), 
-                        dtype=np.float32)
+        feat = tf.io.read_file(feat_path)
+        feat = tf.io.decode_raw(feat, tf.float32)
+
         # フレーム数 x 次元数の配列に変形
-        feat = feat.reshape(-1, feat_dim)
+        feat = tf.reshape(feat, (-1, feat_dim))
 
         # 平均と標準偏差を使って正規化(標準化)を行う
         feat = (feat - feat_mean) / feat_std
 
-        # splicing: 前後 n フレームの特徴量を結合する
-        org_feat = feat.copy()
-        for n in range(-splice, splice+1):
-            # 元々の特徴量を n フレームずらす
-            tmp = np.roll(org_feat, n, axis=0)
-            if n < 0:
-                # 前にずらした場合は
-                # 終端nフレームを0にする
-                tmp[n:] = 0
-            elif n > 0:
-                # 後ろにずらした場合は
-                # 始端nフレームを0にする
-                tmp[:n] = 0
-            else:
-                continue
-            # ずらした特徴量を次元方向に
-            # 結合する
-            feat = np.hstack([feat,tmp])
-
         # 特徴量データのフレーム数を最大フレーム数に
         # 合わせるため，pad_indexで埋める
         pad_len = max_feat_len - feat_len
-        feat = np.pad(feat,
-                    [(0, pad_len), (0, 0)],
-                    mode='constant',
-                    constant_values=pad_index)
+        for _ in range(pad_len):
+            feat = tf.concat([feat, pad], 0)
         return feat
 
     dataset = (
