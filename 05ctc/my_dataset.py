@@ -168,8 +168,7 @@ def build_dataset(feat_scp,
         # 特徴量データのフレーム数を最大フレーム数に
         # 合わせるため，pad_indexで埋める
         pad_len = max_feat_len - feat_len
-        for _ in range(pad_len):
-            feat = tf.concat([feat, pad], 0)
+        feat = tf.concat([feat, tf.zeros((pad_len, feat_dim))], 0)
         return feat
 
     dataset = (
