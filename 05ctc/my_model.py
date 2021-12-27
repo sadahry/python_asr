@@ -54,10 +54,10 @@ def build_model(
         if bidirectional:
             x = layers.Bidirectional(
                     layers.GRU(hidden_dim, return_sequences=True, kernel_initializer=initializer) if rnn_type == 'GRU' \
-                        else layers.LTSM(hidden_dim, return_sequences=True, kernel_initializer=initializer))(x)
+                        else layers.LSTM(hidden_dim, return_sequences=True, kernel_initializer=initializer))(x)
         else:
             x = layers.GRU(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x) if rnn_type == 'GRU' \
-                    else layers.LTSM(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x)
+                    else layers.LSTM(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x)
         # Projection層もRNN層と同様に1層ずつ定義する
         # TODO sub sampling
         x = layers.Dense(projection_dim, kernel_initializer=initializer)(x)
