@@ -260,7 +260,7 @@ if __name__ == "__main__":
                                  'log.txt'),
                                  mode='w')
     log_file.write('epoch\ttrain loss\t'\
-                   'train err\tvalid loss\tvalid err\n')
+                   'valid loss\n')
 
     early_stopping = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss',
@@ -283,8 +283,8 @@ if __name__ == "__main__":
 
     class LoggingCallback(tf.keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
-            log_file.write(f"{epoch}\t{logs['loss']}\t{1.0-logs['accuracy']}" \
-                           f"\t{logs['val_loss']}\t{1.0-logs['val_accuracy']}\n")
+            log_file.write(f"{epoch}\t{logs['loss']}" \
+                           f"\t{logs['val_loss']}\n")
 
     logging_callback = LoggingCallback()
 
@@ -323,15 +323,8 @@ if __name__ == "__main__":
               % (phase, metrics[loss][-1]))
         log_file.write('    %s loss: %f\n' \
                        % (phase, metrics[loss][-1]))
-        # 最終エポックのエラー率を出力    
-        acc = 'val_accuracy' if phase == 'validation' else 'accuracy'
-        error_rate = (1.0 - metrics[acc][-1]) * 100
-        print('    %s error rate: %f %%' \
-              % (phase, error_rate))
-        log_file.write('    %s error rate: %f %%\n' \
-                       % (phase, error_rate))
 
-    best_epoch, best_score = max(enumerate(metrics['val_accuracy']), key = lambda x:x[1])
+    best_epoch, best_score = max(enumerate(metrics['val_loss']), key = lambda x:x[1])
 
     # ベストエポックの情報
     # (validationの損失が最小だったエポック)
@@ -348,13 +341,6 @@ if __name__ == "__main__":
               % (phase, metrics[loss][best_epoch]))
         log_file.write('    %s loss: %f\n' \
               % (phase, metrics[loss][best_epoch]))
-        # ベストエポックのエラー率を出力
-        acc = 'val_accuracy' if phase == 'validation' else 'accuracy'
-        error_rate = (1.0 - metrics[acc][best_epoch]) * 100
-        print('    %s error rate: %f %%' \
-              % (phase, error_rate))
-        log_file.write('    %s error rate: %f %%\n' \
-            % (phase, error_rate))
 
     # 損失値の履歴(Learning Curve)グラフにして保存する
     fig1 = plt.figure()
@@ -366,18 +352,6 @@ if __name__ == "__main__":
     plt.ylabel('Loss')
     fig1.legend()
     fig1.savefig(output_dir+'/loss.png')
-
-    # 認識誤り率の履歴グラフにして保存する
-    fig2 = plt.figure()
-    for phase in ['train', 'validation']:
-        acc = 'val_accuracy' if phase == 'validation' else 'accuracy'
-        error_rates = (1.0 - np.array(metrics[acc])) * 100
-        plt.plot(error_rates,
-                 label=phase+' error')
-    plt.xlabel('Epoch')
-    plt.ylabel('Error [%]')
-    fig2.legend()
-    fig2.savefig(output_dir+'/error.png')
 
     # ログファイルを閉じる
     log_file.close()
