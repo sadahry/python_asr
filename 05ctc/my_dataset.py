@@ -6,7 +6,6 @@
 
 from numpy.lib.arraypad import pad
 import tensorflow as tf
-from tensorflow import keras
 
 # 数値演算用モジュール(numpy)をインポート
 import numpy as np
@@ -15,7 +14,14 @@ import numpy as np
 import sys
 import math
 
-class SequenceDataset(keras.utils.Sequence):
+def build_dataset(feat_scp, 
+                label_scp, 
+                feat_mean, 
+                feat_std,
+                batch_size,
+                num_tokens,
+                pad_index=0,
+                splice=0):
     ''' ミニバッチデータを作成するクラス
         torch.utils.data.Datasetクラスを継承し，
         以下の関数を定義する
@@ -32,188 +38,163 @@ class SequenceDataset(keras.utils.Sequence):
                するので次元数は3倍になる．
                splice=0の場合は何もしない
     '''
-    def __init__(self, 
-                 feat_scp, 
-                 label_scp, 
-                 feat_mean, 
-                 feat_std,
-                 batch_size,
-                 num_tokens,
-                 pad_index=0,
-                 splice=0):
-        # 発話の数
-        self.num_utts = 0
-        # 各発話のID
-        self.id_list = []
-        # 各発話の特徴量ファイルへのパスを記したリスト
-        self.feat_list = []
-        # 各発話の特徴量フレーム数を記したリスト
-        self.feat_len_list = []
-        # 特徴量の平均値ベクトル
-        self.feat_mean = feat_mean
-        # 特徴量の標準偏差ベクトル
-        self.feat_std = feat_std
-        # 標準偏差のフロアリング
-        # (0で割ることが発生しないようにするため)
-        self.feat_std[self.feat_std<1E-10] = 1E-10
-        # 特徴量の次元数
-        self.feat_dim = \
-            np.size(self.feat_mean)
-        # 各発話のラベル
-        self.label_list = []
-        # 各発話のラベルの長さを記したリスト
-        self.label_len_list = []
-        # フレーム数の最大値
-        self.max_feat_len = 0
-        # ラベル長の最大値
-        self.max_label_len = 0
-        # 1バッチに含める発話数
-        self.batch_size = batch_size
-        # トークン数(blankを含む)
-        self.num_tokens = num_tokens
-        # フレーム埋めに用いる整数値
-        self.pad_index = pad_index
-        # splice:前後nフレームの特徴量を結合
-        self.splice = splice
 
-        # 特徴量リスト，ラベルを1行ずつ
-        # 読み込みながら情報を取得する
-        with open(feat_scp, mode='r') as file_f, \
-             open(label_scp, mode='r') as file_l:
-            for (line_feats, line_label) in zip(file_f, file_l):
-                # 各行をスペースで区切り，
-                # リスト型の変数にする
-                parts_feats = line_feats.split()
-                parts_label = line_label.split()
+    # 発話の数
+    num_utts = 0
+    # 各発話のID
+    id_list = []
+    # 各発話の特徴量ファイルへのパスを記したリスト
+    feat_list = []
+    # 各発話の特徴量フレーム数を記したリスト
+    feat_len_list = []
+    # 特徴量の平均値ベクトル
+    feat_mean = feat_mean
+    # 特徴量の標準偏差ベクトル
+    feat_std = feat_std
+    # 標準偏差のフロアリング
+    # (0で割ることが発生しないようにするため)
+    feat_std[feat_std<1E-10] = 1E-10
+    # 特徴量の次元数
+    feat_dim = \
+        np.size(feat_mean)
+    # 各発話のラベル
+    label_list = []
+    # 各発話のラベルの長さを記したリスト
+    label_len_list = []
+    # フレーム数の最大値
+    max_feat_len = 0
+    # ラベル長の最大値
+    max_label_len = 0
+    # 1バッチに含める発話数
+    batch_size = batch_size
+    # トークン数(blankを含む)
+    num_tokens = num_tokens
+    # フレーム埋めに用いる整数値
+    pad_index = pad_index
+    # splice:前後nフレームの特徴量を結合
+    splice = splice
 
-                # 発話ID(partsの0番目の要素)が特徴量と
-                # ラベルで一致していなければエラー
-                if parts_feats[0] != parts_label[0]:
-                    sys.stderr.write('IDs of feat and '\
-                        'label do not match.\n')
-                    exit(1)
+    # 特徴量リスト，ラベルを1行ずつ
+    # 読み込みながら情報を取得する
+    with open(feat_scp, mode='r') as file_f, \
+            open(label_scp, mode='r') as file_l:
+        for (line_feats, line_label) in zip(file_f, file_l):
+            # 各行をスペースで区切り，
+            # リスト型の変数にする
+            parts_feats = line_feats.split()
+            parts_label = line_label.split()
 
-                # 発話IDをリストに追加
-                self.id_list.append(parts_feats[0])
-                # 特徴量ファイルのパスをリストに追加
-                self.feat_list.append(parts_feats[1])
-                # フレーム数をリストに追加
-                feat_len = np.int64(parts_feats[2])
-                self.feat_len_list.append(feat_len)
+            # 発話ID(partsの0番目の要素)が特徴量と
+            # ラベルで一致していなければエラー
+            if parts_feats[0] != parts_label[0]:
+                sys.stderr.write('IDs of feat and '\
+                    'label do not match.\n')
+                exit(1)
 
-                # ラベル(番号で記載)をint型の
-                # numpy arrayに変換
-                label = np.int64(parts_label[1:])
-                # ラベルリストに追加
-                self.label_list.append(label)
-                # ラベルの長さを追加
-                self.label_len_list.append(len(label))
+            # 発話IDをリストに追加
+            id_list.append(parts_feats[0])
+            # 特徴量ファイルのパスをリストに追加
+            feat_list.append(parts_feats[1])
+            # フレーム数をリストに追加
+            feat_len = np.int32(parts_feats[2])
+            feat_len_list.append(feat_len)
 
-                # 発話数をカウント
-                self.num_utts += 1
+            # ラベル(番号で記載)をint型の
+            # numpy arrayに変換
+            label = np.int32(parts_label[1:])
+            # ラベルリストに追加
+            label_list.append(label)
+            # ラベルの長さを追加
+            label_len_list.append(np.int32(len(label)))
 
-        # フレーム数の最大値を得る
-        self.max_feat_len = \
-            np.max(self.feat_len_list)
-        # ラベル長の最大値を得る
-        self.max_label_len = \
-            np.max(self.label_len_list)
+            # 発話数をカウント
+            num_utts += 1
 
-        # ラベルデータの長さを最大フレーム長に
-        # 合わせるため，pad_indexの値で埋める
-        for n in range(self.num_utts):
-            # 埋めるフレームの数
-            # = 最大フレーム数 - 自分のフレーム数
-            pad_len = self.max_label_len \
-                    - self.label_len_list[n]
-            self.label_list[n] = \
-                np.pad(self.label_list[n], 
-                       [0, pad_len], 
-                       mode='constant', 
-                       constant_values=self.pad_index)
+    # フレーム数の最大値を得る
+    max_feat_len = \
+        np.max(feat_len_list)
+    # ラベル長の最大値を得る
+    max_label_len = \
+        np.max(label_len_list)
 
-    def __len__(self):
-        ''' 学習データの総サンプル数を返す関数
-        本実装では発話単位でバッチを作成する．
-        ただしTensorflow実装ではこのクラス内でバッチを作成するため，
-        総サンプル数=発話数/バッチ数となる．
-        '''
-        return math.ceil(self.num_utts / self.batch_size)
+    # ラベルデータの長さを最大フレーム長に
+    # 合わせるため，pad_indexの値で埋める
+    for n in range(num_utts):
+        # 埋めるフレームの数
+        # = 最大フレーム数 - 自分のフレーム数
+        pad_len = max_label_len \
+                - label_len_list[n]
+        label_list[n] = \
+            np.pad(label_list[n], 
+                    [0, pad_len], 
+                    mode='constant', 
+                    constant_values=pad_index)
 
-    def __getitem__(self, idx):
+    dataset = tf.data.Dataset.from_tensor_slices(
+        (feat_list, label_list, feat_len_list, label_len_list))
+
+    @tf.function
+    def __getitem__(feat_path, label, feat_len, label_len):
         ''' サンプルデータを返す関数
         本実装では発話単位でバッチを作成する．
-        ただしTensorflow実装ではこのクラス内でバッチを作成するため，
-        idx=バッチ番号となり，idx*バッチ数の発話を取得する．
         '''
-        feats = []
-        labels = []
-        feat_lens = []
-        label_lens = []
-        for i in range(idx*self.batch_size, min(self.num_utts, (idx+1)*self.batch_size)):
-            # 特徴量系列のフレーム数
-            feat_len = self.feat_len_list[i]
+        feat = tf.py_function(getfeat, [feat_path, feat_len], tf.float32)
 
-            # 特徴量データを特徴量ファイルから読み込む
-            feat = np.fromfile(self.feat_list[i], 
-                            dtype=np.float32)
-            # フレーム数 x 次元数の配列に変形
-            feat = feat.reshape(-1, self.feat_dim)
+        # 特徴量，ラベルとそれぞれの長さのバッチを返す
+        # paddingや変換によって元の長さが消失してしまうためinputに含める
+        return {
+            "feat": feat,
+            "label": label,
+            "feat_len": feat_len,
+            "label_len": label_len,
+        }
 
-            # 平均と標準偏差を使って正規化(標準化)を行う
-            feat = (feat - self.feat_mean) / self.feat_std
+    def getfeat(feat_path, feat_len):
+        ''' 特徴量の取得処理を分離
+        '''
+        # 特徴量データを特徴量ファイルから読み込む
+        feat = np.fromfile(feat_path.numpy(), 
+                        dtype=np.float32)
+        # フレーム数 x 次元数の配列に変形
+        feat = feat.reshape(-1, feat_dim)
 
-            # splicing: 前後 n フレームの特徴量を結合する
-            org_feat = feat.copy()
-            for n in range(-self.splice, self.splice+1):
-                # 元々の特徴量を n フレームずらす
-                tmp = np.roll(org_feat, n, axis=0)
-                if n < 0:
-                    # 前にずらした場合は
-                    # 終端nフレームを0にする
-                    tmp[n:] = 0
-                elif n > 0:
-                    # 後ろにずらした場合は
-                    # 始端nフレームを0にする
-                    tmp[:n] = 0
-                else:
-                    continue
-                # ずらした特徴量を次元方向に
-                # 結合する
-                feat = np.hstack([feat,tmp])
+        # 平均と標準偏差を使って正規化(標準化)を行う
+        feat = (feat - feat_mean) / feat_std
 
-            # 特徴量データのフレーム数を最大フレーム数に
-            # 合わせるため，pad_indexで埋める
-            pad_len = self.max_feat_len - feat_len
-            feat = np.pad(feat,
-                        [(0, pad_len), (0, 0)],
-                        mode='constant',
-                        constant_values=self.pad_index)
+        # splicing: 前後 n フレームの特徴量を結合する
+        org_feat = feat.copy()
+        for n in range(-splice, splice+1):
+            # 元々の特徴量を n フレームずらす
+            tmp = np.roll(org_feat, n, axis=0)
+            if n < 0:
+                # 前にずらした場合は
+                # 終端nフレームを0にする
+                tmp[n:] = 0
+            elif n > 0:
+                # 後ろにずらした場合は
+                # 始端nフレームを0にする
+                tmp[:n] = 0
+            else:
+                continue
+            # ずらした特徴量を次元方向に
+            # 結合する
+            feat = np.hstack([feat,tmp])
 
-            # featに対応するデータを取得
-            label = self.label_list[i]
-            feat_len = self.feat_len_list[i]
-            label_len = self.label_len_list[i]
+        # 特徴量データのフレーム数を最大フレーム数に
+        # 合わせるため，pad_indexで埋める
+        pad_len = max_feat_len - feat_len
+        feat = np.pad(feat,
+                    [(0, pad_len), (0, 0)],
+                    mode='constant',
+                    constant_values=pad_index)
+        return feat
 
-            feats.append(feat)
-            labels.append(label)
-            feat_lens.append(feat_len)
-            label_lens.append(label_len)
+    dataset = (
+        dataset.map(
+            __getitem__, num_parallel_calls=tf.data.AUTOTUNE
+        )
+        .batch(batch_size)
+        .prefetch(buffer_size=tf.data.AUTOTUNE)
+    )
 
-        # 以下を踏襲
-        # https://github.com/kutvonenaki/simple_ocr/blob/af05b1697ff4771b611e2fc671bf25f04aa87388/ocr_source/batch_functions.py
-
-        # now the hacky part
-        # keras requires in the loss function to y_pred and y_true to be the same shape
-        # but the ctc losses use y_pred of shape (batchsize, max_feat_len, num_tokens) from NN
-        # and batch_labels, input_length, label_lens which are the "y_true" but these are
-        # different dimension so pack them to (batchsize, max_feat_len, num_tokens) and later
-        # unpack in the loss to stop the whining.
-        y_true = np.full((self.batch_size, self.max_feat_len, self.num_tokens), self.pad_index, dtype=np.int32)
-
-        y_true[:, 0:self.max_label_len, 0] = labels
-        y_true[:, 0, 1] = feat_lens
-        y_true[:, 0, 2] = label_lens
-
-        # 特徴量，ラベルのバッチを返す
-        return (np.array(feats), y_true)
+    return dataset

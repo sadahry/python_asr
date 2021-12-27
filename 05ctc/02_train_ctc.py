@@ -7,7 +7,8 @@
 import tensorflow as tf
 
 # 作成したDatasetクラスをインポート
-from my_dataset import SequenceDataset
+from my_dataset import build_dataset
+from my_model import build_model
 
 # 数値演算用モジュール(numpy)をインポート
 import numpy as np
@@ -219,67 +220,25 @@ if __name__ == "__main__":
 
     pad_index = 0.0
 
-    '''LeCunのパラメータ初期化方法の実行
-    各重み(バイアス成分除く)を，平均0，標準偏差 1/sqrt(dim) の
-    正規分布に基づく乱数で初期化(dim は入力次元数)
-    model: Pytorchで定義したモデル
-    '''
-    initializer = tf.keras.initializers.LecunNormal()
-
     # ニューラルネットワークモデルを作成する
     # 入力の次元数は特徴量の次元数，
     # 出力の次元数はトークン数となる
-    model = tf.keras.Sequential()
-    # model.add(tf.keras.Input(shape=(feat_dim,)))
-    model.add(tf.keras.layers.Masking(input_shape=(None, feat_dim), mask_value=pad_index))
-
-    for i in range(num_layers):
-        rnn_layer = tf.keras.layers.GRU(hidden_dim, return_sequences=True, kernel_initializer=initializer) if rnn_type == 'GRU' \
-                    else tf.keras.layers.LTSM(hidden_dim, return_sequences=True, kernel_initializer=initializer)
-        if bidirectional:
-            rnn_layer = tf.keras.layers.Bidirectional(rnn_layer)
-        model.add(rnn_layer)
-        # Projection層もRNN層と同様に1層ずつ定義する
-        # TODO sub sampling
-        model.add(tf.keras.layers.Dense(projection_dim, kernel_initializer=initializer))
-    model.add(tf.keras.layers.Dense(num_tokens, activation=tf.nn.softmax, kernel_initializer=initializer))
+    model = build_model(
+        feat_dim,
+        pad_index,
+        num_layers,
+        hidden_dim,
+        bidirectional,
+        projection_dim,
+        num_tokens,
+        rnn_type,
+        initial_learning_rate,
+    )
 
     model.summary()
 
-    # 以下を踏襲
-    # https://github.com/kutvonenaki/simple_ocr/blob/af05b1697ff4771b611e2fc671bf25f04aa87388/ocr_source/losses.py#L8-L27
-    def custom_ctc():
-        """Custom CTC loss implementation"""
-
-        def loss(y_true, y_pred):
-            # print("calc ctc...")
-            # print(y_true)
-            # print(y_pred)
-            """The actual loss"""
-            labels = y_true[:, :, 0]
-            feat_lens = y_true[:, 0, 1]
-            label_lens = y_true[:, 0, 2]
-
-            # reshape for the loss, add that extra dimension
-            feat_lens = tf.expand_dims(feat_lens, -1)
-            label_lens = tf.expand_dims(label_lens, -1)
-
-            # use keras backend function for the loss
-            return tf.keras.backend.ctc_batch_cost(labels, y_pred, feat_lens, label_lens)
-        return loss
-
-    model.compile(
-        # オプティマイザを定義
-        optimizer=tf.keras.optimizers.Adadelta(learning_rate=initial_learning_rate, rho=0.95, epsilon=1e-8),
-        # CTC損失関数を呼び出す．
-        # blankは0番目と定義する．
-        loss=custom_ctc(),
-        metrics=['accuracy'],
-        # run_eagerly=True,
-    )
-
     # 訓練/開発データのデータセットを作成する
-    train_dataset = SequenceDataset(feat_scp_train,
+    train_dataset = build_dataset(feat_scp_train,
                                     label_train,
                                     feat_mean,
                                     feat_std,
@@ -288,7 +247,7 @@ if __name__ == "__main__":
                                     pad_index)
 
     # 開発データのデータセットを作成する
-    dev_dataset = SequenceDataset(feat_scp_dev,
+    dev_dataset = build_dataset(feat_scp_dev,
                                   label_dev,
                                   feat_mean,
                                   feat_std,
