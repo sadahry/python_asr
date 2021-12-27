@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 #
 # Pytorchで用いるDatasetの定義
@@ -129,9 +130,6 @@ def build_dataset(feat_scp,
                     [0, pad_len], 
                     mode='constant', 
                     constant_values=pad_index)
-
-    # tf.function内で生成するとエラーになるため、あらかじめ作成
-    pad = tf.constant([[pad_index] * feat_dim])
 
     dataset = tf.data.Dataset.from_tensor_slices(
         (feat_list, label_list, feat_len_list, label_len_list))
