@@ -324,7 +324,7 @@ if __name__ == "__main__":
         log_file.write('    %s loss: %f\n' \
                        % (phase, metrics[loss][-1]))
 
-    best_epoch, best_score = max(enumerate(metrics['val_loss']), key = lambda x:x[1])
+    best_epoch, best_score = min(enumerate(metrics['val_loss']), key = lambda x:x[1])
 
     # ベストエポックの情報
     # (validationの損失が最小だったエポック)
