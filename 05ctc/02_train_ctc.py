@@ -98,7 +98,7 @@ if __name__ == "__main__":
     output_dir = os.path.join(exp_dir, unit+'_model_ctc')
 
     # ミニバッチに含める発話数
-    batch_size = 16
+    batch_size = 8
 
     # 最大エポック数
     max_num_epoch = 60
