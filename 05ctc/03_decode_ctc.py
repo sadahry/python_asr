@@ -6,9 +6,6 @@
 
 import tensorflow as tf
 
-# 作成したDatasetクラスをインポート
-from my_dataset import SequenceDataset
-
 # 数値演算用モジュール(numpy)をインポート
 import numpy as np
 
