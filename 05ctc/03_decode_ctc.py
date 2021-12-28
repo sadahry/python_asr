@@ -18,6 +18,31 @@ import sys
 
 os.chdir(os.path.dirname(__file__))
 
+def ctc_simple_decode(int_vector, token_list):
+    ''' 以下の手順で，フレーム単位のCTC出力をトークン列に変換する
+        1. 同じ文字が連続して出現する場合は削除
+        2. blank を削除
+    int_vector: フレーム単位のCTC出力(整数値列)
+    token_list: トークンリスト
+    output:     トークン列
+    '''
+    # 出力文字列
+    output = []
+    # 一つ前フレームの文字番号
+    prev_token = -1
+    # フレーム毎の出力文字系列を前から順番にチェックしていく
+    for n in int_vector:
+        if n != prev_token:
+            # 1. 前フレームと同じトークンではない
+            if n != -1:
+                # 2. かつ，blank(番号=-1)ではない
+                # --> token_listから対応する文字を抽出し，
+                #     出力文字列に加える
+                output.append(token_list[n])
+            # 前フレームのトークンを更新
+            prev_token = n
+    return output
+
 #
 # メイン関数
 #
@@ -67,7 +92,7 @@ if __name__ == "__main__":
     config_file = os.path.join(model_dir, 'config.json')
 
     # ミニバッチに含める発話数
-    batch_size = 10
+    batch_size = 8
     
     #
     # 設定ここまで
@@ -139,6 +164,11 @@ if __name__ == "__main__":
     # モデルを読み込む
     model = tf.keras.models.load_model(rnn_dir, custom_objects={"loss": custom_ctc()})
 
+    # 予測モデルではCTCLayerを省いたモデルを利用
+    model = tf.keras.models.Model(
+        model.get_layer(name="feat").input, model.get_layer(name="softmax").output
+    )
+
     model.summary()
 
     # 以下から踏襲
@@ -152,16 +182,6 @@ if __name__ == "__main__":
             :, :np.int64(max(input_len))
         ]
         return result
-
-    def tokens_to_text(tokens, token_list):
-        # Iterate over the results and get back the text
-        output_text = []
-        for token in tokens:
-            unit = token_list[token]
-            output_text.append(unit)
-        # (' '.join() は，リスト形式のデータを
-        # スペース区切りで文字列に変換している)
-        return ' '.join(output_text)
 
     # デコード結果および正解ラベルをファイルに書き込みながら
     # 以下の処理を行う
@@ -197,14 +217,20 @@ if __name__ == "__main__":
                 # フレーム数 x 次元数の配列に変形
                 feat = feat.reshape(-1, feat_dim)
 
+                # 平均と標準偏差を使って正規化(標準化)を行う
+                feat = (feat - feat_mean) / feat_std
+
                 # モデルの出力を計算(フォワード処理)
                 # 1発話のみのバッチとして扱う
                 preds = model.predict(np.array([feat]))
-                pred_tokens = decode_batch_predictions(preds)
-                pred_tokens = pred_tokens[0].numpy()
+                pred_idxs = decode_batch_predictions(preds)
+                pred_idxs = pred_idxs[0].numpy()
+
+                pred_tokens = ctc_simple_decode(pred_idxs, token_list)
+                label_tokens = [token_list[l] for l in label]
 
                 # 結果を書き込む
                 hyp_file.write('%s %s\n' \
-                    % (utt_id, tokens_to_text(pred_tokens, token_list)))
+                    % (utt_id, ' '.join(pred_tokens)))
                 ref_file.write('%s %s\n' \
-                    % (utt_id, tokens_to_text(label, token_list)))
+                    % (utt_id, ' '.join(label_tokens)))
