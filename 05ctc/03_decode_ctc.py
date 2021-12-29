@@ -138,31 +138,9 @@ if __name__ == "__main__":
     # トークン数(blankを含む)
     num_tokens = len(token_list)
 
-    # 以下を踏襲
-    # https://github.com/kutvonenaki/simple_ocr/blob/af05b1697ff4771b611e2fc671bf25f04aa87388/ocr_source/losses.py#L8-L27
-    def custom_ctc():
-        """Custom CTC loss implementation"""
-
-        def loss(y_true, y_pred):
-            # print("calc ctc...")
-            # print(y_true)
-            # print(y_pred)
-            """The actual loss"""
-            labels = y_true[:, :, 0]
-            feat_lens = y_true[:, 0, 1]
-            label_lens = y_true[:, 0, 2]
-
-            # reshape for the loss, add that extra dimension
-            feat_lens = tf.expand_dims(feat_lens, -1)
-            label_lens = tf.expand_dims(label_lens, -1)
-
-            # use keras backend function for the loss
-            return tf.keras.backend.ctc_batch_cost(labels, y_pred, feat_lens, label_lens)
-        return loss
-
     # 学習済みのDNNファイルから
     # モデルを読み込む
-    model = tf.keras.models.load_model(rnn_dir, custom_objects={"loss": custom_ctc()})
+    model = tf.keras.models.load_model(rnn_dir)
 
     # 予測モデルではCTCLayerを省いたモデルを利用
     model = tf.keras.models.Model(
