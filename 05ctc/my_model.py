@@ -8,9 +8,16 @@ class CTCLayer(layers.Layer):
         super().__init__(name=name)
         self.loss_fn = keras.backend.ctc_batch_cost
 
-    def call(self, y_pred, labels, feat_lens, label_lens):
+    def call(self, y_pred, labels, feat_lens, label_lens, sub_sample):
         # Compute the training-time loss value and add it
         # to the layer using `self.add_loss()`.
+
+        for sub in sub_sample:
+            if sub != 1:
+                # フレーム数を更新する 
+                # 更新後のフレーム数=(更新前のフレーム数+1)//sub
+                feat_lens = (feat_lens+1) // sub
+
         batch_len = tf.cast(tf.shape(labels)[0], dtype=tf.int32)
         feat_lens = feat_lens * tf.ones(shape=(batch_len, 1), dtype=tf.int32)
         label_lens = label_lens * tf.ones(shape=(batch_len, 1), dtype=tf.int32)
@@ -28,6 +35,7 @@ def build_model(
     hidden_dim,
     bidirectional,
     projection_dim,
+    sub_sample,
     num_tokens,
     rnn_type,
     initial_learning_rate,
@@ -59,13 +67,14 @@ def build_model(
             x = layers.GRU(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x) if rnn_type == 'GRU' \
                     else layers.LSTM(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x)
         # Projection層もRNN層と同様に1層ずつ定義する
-        # TODO sub sampling
-        # x = layers.Dense(projection_dim, kernel_initializer=initializer)(x)
+        # 間引きを実行する
+        x = x[:, :, ::sub_sample[i]]
+        x = layers.Dense(projection_dim, kernel_initializer=initializer)(x)
 
     x = layers.Dense(num_tokens, name="softmax", activation=tf.nn.softmax, kernel_initializer=initializer)(x)
 
     # Add CTC layer for calculating CTC loss at each step
-    output = CTCLayer(name="ctc_loss")(x, labels, feat_lens, label_lens)
+    output = CTCLayer(name="ctc_loss")(x, labels, feat_lens, label_lens, sub_sample)
 
     # Define the model
     model = keras.models.Model(

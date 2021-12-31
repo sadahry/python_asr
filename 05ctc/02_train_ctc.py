@@ -230,6 +230,7 @@ if __name__ == "__main__":
         hidden_dim,
         bidirectional,
         projection_dim,
+        sub_sample,
         num_tokens,
         rnn_type,
         initial_learning_rate,
