@@ -68,7 +68,7 @@ def build_model(
                     else layers.LSTM(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x)
         # Projection層もRNN層と同様に1層ずつ定義する
         # 間引きを実行する
-        x = x[:, :, ::sub_sample[i]]
+        x = x[:, ::sub_sample[i]]
         x = layers.Dense(projection_dim, kernel_initializer=initializer)(x)
 
     x = layers.Dense(num_tokens, name="softmax", activation=tf.nn.softmax, kernel_initializer=initializer)(x)
