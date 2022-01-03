@@ -13,7 +13,7 @@ class CTCLayer(layers.Layer):
         # to the layer using `self.add_loss()`.
 
         for sub in sub_sample:
-            if sub != 1:
+            if sub > 1:
                 # フレーム数を更新する 
                 # 更新後のフレーム数=(更新前のフレーム数+1)//sub
                 feat_lens = (feat_lens+1) // sub
@@ -67,8 +67,10 @@ def build_model(
             x = layers.GRU(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x) if rnn_type == 'GRU' \
                     else layers.LSTM(hidden_dim, return_sequences=True, kernel_initializer=initializer)(x)
         # Projection層もRNN層と同様に1層ずつ定義する
-        # 間引きを実行する
-        x = x[:, ::sub_sample[i]]
+        sub = sub_sample[i]
+        if sub > 1:
+            # 間引きを実行する
+            x = x[:, ::sub]
         x = layers.Dense(projection_dim, kernel_initializer=initializer)(x)
 
     x = layers.Dense(num_tokens, name="softmax", activation=tf.nn.softmax, kernel_initializer=initializer)(x)
@@ -82,8 +84,7 @@ def build_model(
     )
 
     # Optimizer
-    opt = keras.optimizers.Adadelta(learning_rate=initial_learning_rate, rho=0.95, epsilon=1e-8),
-    opt = keras.optimizers.Adam()
+    opt = keras.optimizers.Adadelta(learning_rate=initial_learning_rate, rho=0.95, epsilon=1e-8)
 
     # Compile the model and return
     model.compile(
