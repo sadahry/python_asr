@@ -115,10 +115,11 @@ if __name__ == "__main__":
     rnn_type = 'GRU'
 
     # 中間層の次元数
-    hidden_dim = 256
+    # projection_dim = 512 -> error on M1 Mac
+    hidden_dim = 320
 
     # Projection層の次元数
-    projection_dim = 256
+    projection_dim = 320
 
     # bidirectional を用いるか(Trueなら用いる)
     bidirectional = True
@@ -218,7 +219,7 @@ if __name__ == "__main__":
     # https://github.com/kutvonenaki/simple_ocr/blob/bb35e437d6b2447d084500c032461bf13c95cc3f/ocr_source/models.py#L62
     num_tokens = len(token_list) + 1
 
-    pad_index = -1.0
+    pad_index = 0.0
 
     # ニューラルネットワークモデルを作成する
     # 入力の次元数は特徴量の次元数，
