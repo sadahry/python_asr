@@ -18,10 +18,6 @@ class CTCLayer(layers.Layer):
                 # 更新後のフレーム数=(更新前のフレーム数+1)//sub
                 feat_lens = (feat_lens+1) // sub
 
-        batch_len = tf.cast(tf.shape(labels)[0], dtype=tf.int32)
-        feat_lens = feat_lens * tf.ones(shape=(batch_len, 1), dtype=tf.int32)
-        label_lens = label_lens * tf.ones(shape=(batch_len, 1), dtype=tf.int32)
-
         loss = self.loss_fn(labels, y_pred, feat_lens, label_lens)
         self.add_loss(loss)
 
