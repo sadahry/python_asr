@@ -104,22 +104,22 @@ if __name__ == "__main__":
     max_num_epoch = 60
 
     # 中間層のレイヤー数
-    num_layers = 5
+    num_layers = 3
 
     # 層ごとのsub sampling設定
     # [1, 2, 2, 1, 1]の場合は，2層目と3層目において，
     # フレームを1/2に間引く(結果的にフレーム数が1/4になる)
-    sub_sample = [1, 2, 2, 1, 1]
+    sub_sample = [1, 2, 2]
 
     # RNNのタイプ(LSTM or GRU)
     rnn_type = 'GRU'
 
     # 中間層の次元数
     # projection_dim = 512 -> error on M1 Mac
-    hidden_dim = 320
+    hidden_dim = 256
 
     # Projection層の次元数
-    projection_dim = 320
+    projection_dim = 256
 
     # bidirectional を用いるか(Trueなら用いる)
     bidirectional = True
@@ -247,7 +247,8 @@ if __name__ == "__main__":
                                     feat_std,
                                     batch_size,
                                     num_tokens,
-                                    pad_index)
+                                    pad_index,
+                                    shuffle=True)
 
     # 開発データのデータセットを作成する
     dev_dataset = build_dataset(feat_scp_dev,

@@ -22,7 +22,9 @@ def build_dataset(feat_scp,
                 batch_size,
                 num_tokens,
                 pad_index=0,
-                splice=0):
+                shuffle=False,
+                splice=0,
+                ):
     ''' ミニバッチデータを作成するクラス
         torch.utils.data.Datasetクラスを継承し，
         以下の関数を定義する
@@ -169,9 +171,12 @@ def build_dataset(feat_scp,
         feat = tf.concat([feat, tf.fill((pad_len, feat_dim), pad_index)], 0)
         return feat
 
+    if shuffle:
+        dataset = dataset.shuffle(batch_size)
+
     dataset = (
         dataset.map(
-            __getitem__, num_parallel_calls=tf.data.AUTOTUNE
+            __getitem__,num_parallel_calls=tf.data.AUTOTUNE
         )
         .batch(batch_size)
         .prefetch(buffer_size=tf.data.AUTOTUNE)
