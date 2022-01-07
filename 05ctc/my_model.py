@@ -39,6 +39,7 @@ def build_model(
     num_tokens,
     rnn_type,
     initial_learning_rate,
+    clip_grad_threshold,
     ):
 
     # Inputs to the model
@@ -84,7 +85,7 @@ def build_model(
     )
 
     # Optimizer
-    opt = keras.optimizers.Adadelta(learning_rate=initial_learning_rate, rho=0.95, epsilon=1e-8)
+    opt = keras.optimizers.Adadelta(learning_rate=initial_learning_rate, rho=0.95, epsilon=1e-8, clipvalue=clip_grad_threshold)
 
     # Compile the model and return
     model.compile(

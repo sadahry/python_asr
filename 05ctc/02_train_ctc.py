@@ -235,6 +235,7 @@ if __name__ == "__main__":
         num_tokens,
         rnn_type,
         initial_learning_rate,
+        clip_grad_threshold,
     )
 
     model.summary()
