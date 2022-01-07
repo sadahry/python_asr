@@ -284,6 +284,19 @@ if __name__ == "__main__":
         save_best_only=True,
     )
 
+    def step_decay(_, lr):
+        # Early stopping条件に
+        # 達していない場合は
+        # 学習率を減衰させて学習続行
+        if lr_decay_factor < 1.0:
+            dlr = lr * lr_decay_factor
+            log_file.write(f"(Decay learning rate: {lr} -> {dlr})\n")
+            return dlr
+        else:
+            return lr
+
+    lr_decay = tf.keras.callbacks.LearningRateScheduler(step_decay)
+
     class LoggingCallback(tf.keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
             log_file.write(f"{epoch}\t{logs['loss']}" \
@@ -296,7 +309,7 @@ if __name__ == "__main__":
         train_dataset,
         validation_data=dev_dataset,
         epochs=max_num_epoch,
-        callbacks=[early_stopping, model_checkpoint_callback, logging_callback],
+        callbacks=[early_stopping, model_checkpoint_callback, lr_decay, logging_callback],
     )
 
     #
