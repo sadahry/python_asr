@@ -247,8 +247,7 @@ if __name__ == "__main__":
                                     feat_std,
                                     batch_size,
                                     num_tokens,
-                                    pad_index,
-                                    shuffle=True)
+                                    pad_index)
 
     # 開発データのデータセットを作成する
     dev_dataset = build_dataset(feat_scp_dev,

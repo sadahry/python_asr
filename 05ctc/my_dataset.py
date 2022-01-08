@@ -22,7 +22,6 @@ def build_dataset(feat_scp,
                 batch_size,
                 num_tokens,
                 pad_index=0,
-                shuffle=False,
                 splice=0,
                 ):
     ''' ミニバッチデータを作成するクラス
@@ -170,9 +169,6 @@ def build_dataset(feat_scp,
         pad_len = max_feat_len - feat_len
         feat = tf.concat([feat, tf.fill((pad_len, feat_dim), pad_index)], 0)
         return feat
-
-    if shuffle:
-        dataset = dataset.shuffle(batch_size)
 
     dataset = (
         dataset.map(
