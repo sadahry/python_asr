@@ -17,14 +17,14 @@ class CTCLayer(layers.Layer):
                 # 更新後のフレーム数=(更新前のフレーム数+1)//sub
                 feat_lens = (feat_lens+1) // sub
 
-        # Error on Mac M1 GPU
-        # (1) Not found:  No registered 'IsFinite' OpKernel for 'GPU' devices compatible with node {{node ReduceLogSumExp/IsFinite}}
-        with tf.device('/cpu:0'):
-            feat_lens = tf.reshape(feat_lens, (-1,))
-            label_lens = tf.reshape(label_lens, (-1,))
-            loss = tf.reduce_mean(tf.nn.ctc_loss(labels, y_pred, label_lens, feat_lens, logits_time_major=False, blank_index=-1))
+        # # Error on Mac M1 GPU
+        # # (1) Not found:  No registered 'IsFinite' OpKernel for 'GPU' devices compatible with node {{node ReduceLogSumExp/IsFinite}}
+        # with tf.device('/cpu:0'):
+        #     feat_lens = tf.reshape(feat_lens, (-1,))
+        #     label_lens = tf.reshape(label_lens, (-1,))
+        #     loss = tf.reduce_mean(tf.nn.ctc_loss(labels, y_pred, label_lens, feat_lens, logits_time_major=False, blank_index=-1))
 
-        # loss = keras.backend.ctc_batch_cost(labels, y_pred, feat_lens, label_lens)
+        loss = keras.backend.ctc_batch_cost(labels, y_pred, feat_lens, label_lens)
 
         self.add_loss(loss)
 
@@ -77,8 +77,8 @@ def build_model(
             x = x[:, ::sub]
         x = layers.Dense(projection_dim, kernel_initializer=initializer)(x)
 
-    x = layers.Dense(num_tokens, name="softmax", kernel_initializer=initializer)(x)
-    # x = layers.Dense(num_tokens, name="softmax", activation=tf.nn.softmax, kernel_initializer=initializer)(x)
+    # x = layers.Dense(num_tokens, name="softmax", kernel_initializer=initializer)(x)
+    x = layers.Dense(num_tokens, name="softmax", activation=tf.nn.softmax, kernel_initializer=initializer)(x)
 
     # Add CTC layer for calculating CTC loss at each step
     output = CTCLayer(name="ctc_loss")(x, labels, feat_lens, label_lens, sub_sample)
