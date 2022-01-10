@@ -104,22 +104,22 @@ if __name__ == "__main__":
     max_num_epoch = 60
 
     # 中間層のレイヤー数
-    num_layers = 5
+    num_layers = 3
 
     # 層ごとのsub sampling設定
     # [1, 2, 2, 1, 1]の場合は，2層目と3層目において，
     # フレームを1/2に間引く(結果的にフレーム数が1/4になる)
-    sub_sample = [1, 2, 2, 1, 1]
+    sub_sample = [1, 2, 2]
 
     # RNNのタイプ(LSTM or GRU)
     rnn_type = 'GRU'
 
     # 中間層の次元数
     # projection_dim = 512 -> error on M1 Mac
-    hidden_dim = 320
+    hidden_dim = 400
 
     # Projection層の次元数
-    projection_dim = 320
+    projection_dim = 400
 
     # bidirectional を用いるか(Trueなら用いる)
     bidirectional = True
@@ -284,18 +284,18 @@ if __name__ == "__main__":
         save_best_only=True,
     )
 
-    def step_decay(_, lr):
-        # Early stopping条件に
-        # 達していない場合は
-        # 学習率を減衰させて学習続行
-        if lr_decay_factor < 1.0:
-            dlr = lr * lr_decay_factor
-            log_file.write(f"(Decay learning rate: {lr} -> {dlr})\n")
-            return dlr
-        else:
-            return lr
+    # def step_decay(_, lr):
+    #     # Early stopping条件に
+    #     # 達していない場合は
+    #     # 学習率を減衰させて学習続行
+    #     if lr_decay_factor < 1.0:
+    #         dlr = lr * lr_decay_factor
+    #         log_file.write(f"(Decay learning rate: {lr} -> {dlr})\n")
+    #         return dlr
+    #     else:
+    #         return lr
 
-    lr_decay = tf.keras.callbacks.LearningRateScheduler(step_decay)
+    # lr_decay = tf.keras.callbacks.LearningRateScheduler(step_decay)
 
     class LoggingCallback(tf.keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
@@ -309,7 +309,7 @@ if __name__ == "__main__":
         train_dataset,
         validation_data=dev_dataset,
         epochs=max_num_epoch,
-        callbacks=[early_stopping, model_checkpoint_callback, lr_decay, logging_callback],
+        callbacks=[early_stopping, model_checkpoint_callback, logging_callback],
     )
 
     #
