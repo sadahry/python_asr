@@ -18,31 +18,6 @@ import sys
 
 os.chdir(os.path.dirname(__file__))
 
-def ctc_simple_decode(int_vector, token_list):
-    ''' 以下の手順で，フレーム単位のCTC出力をトークン列に変換する
-        1. 同じ文字が連続して出現する場合は削除
-        2. blank を削除
-    int_vector: フレーム単位のCTC出力(整数値列)
-    token_list: トークンリスト
-    output:     トークン列
-    '''
-    # 出力文字列
-    output = []
-    # 一つ前フレームの文字番号
-    prev_token = -1
-    # フレーム毎の出力文字系列を前から順番にチェックしていく
-    for n in int_vector:
-        if n != prev_token:
-            # 1. 前フレームと同じトークンではない
-            if n != -1:
-                # 2. かつ，blank(番号=-1)ではない
-                # --> token_listから対応する文字を抽出し，
-                #     出力文字列に加える
-                output.append(token_list[n])
-            # 前フレームのトークンを更新
-            prev_token = n
-    return output
-
 #
 # メイン関数
 #
@@ -122,10 +97,7 @@ if __name__ == "__main__":
     feat_dim = np.size(feat_mean)
 
     # トークンリストをdictionary型で読み込む
-    # decode時にblankは -1 となる
-    # Important: blank labels are returned as -1.
-    # https://docs.w3cub.com/tensorflow~python/tf/keras/backend/ctc_decode
-    token_list = {-1: "<blank>"}
+    token_list = {}
     with open(token_list_path, mode='r') as f:
         # 1行ずつ読み込む
         for line in f: 
@@ -134,9 +106,6 @@ if __name__ == "__main__":
             parts = line.split()
             # 0番目の要素がトークン，1番目の要素がID
             token_list[int(parts[1])] = parts[0]
-
-    # トークン数(blankを含む)
-    num_tokens = len(token_list)
 
     # 学習済みのDNNファイルから
     # モデルを読み込む
@@ -155,6 +124,8 @@ if __name__ == "__main__":
     # A utility function to decode the output of the network
     def decode_batch_predictions(pred):
         input_len = np.ones(pred.shape[0]) * pred.shape[1]
+        # 文中のblankはdecode時に省いてくれるため、
+        # たとえば本来 [<blank>,1,1,<blank>,<blank>,2,<blank>,1,<blank>,<blank>,] となる結果は [1,2,1,<blank>,<blank>,] となる
         # Use greedy search. For complex tasks, you can use beam search
         result = tf.keras.backend.ctc_decode(pred, input_length=input_len, greedy=True)[0][0][
             :, :np.int64(max(input_len))
@@ -203,8 +174,13 @@ if __name__ == "__main__":
                 preds = model.predict(np.array([feat]))
                 pred_idxs = decode_batch_predictions(preds)
                 pred_idxs = pred_idxs[0].numpy()
+                # blankを削除
+                # decode時にblankは -1 となる
+                # Important: blank labels are returned as -1.
+                # https://docs.w3cub.com/tensorflow~python/tf/keras/backend/ctc_decode
+                pred_idxs = pred_idxs[pred_idxs != -1]
 
-                pred_tokens = ctc_simple_decode(pred_idxs, token_list)
+                pred_tokens = [token_list[pred_idx] for pred_idx in pred_idxs]
                 label_tokens = [token_list[l] for l in label]
 
                 # 結果を書き込む
